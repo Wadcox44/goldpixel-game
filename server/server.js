@@ -1,40 +1,67 @@
-// Importation des modules nécessaires
-const express = require('express'); // Utilise Express pour créer le serveur web
-const http = require('http'); // Utilise le module HTTP natif de Node.js
-const { Server } = require('socket.io'); // Importe Socket.io pour la communication temps réel
-const path = require('path'); // Gère les chemins de fichiers de manière sécurisée
+const WebSocket = require('ws'); // Importe la bibliothèque pour la communication temps réel
+const http = require('http'); // Importe le module HTTP pour créer le serveur de base
+const fs = require('fs'); // Importe le module de système de fichiers pour sauvegarder les données
 
-const app = express(); // Initialise l'application Express
-const server = http.createServer(app); // Crée le serveur HTTP en utilisant l'app Express
-const io = new Server(server, { cors: { origin: "*" } }); // Active Socket.io avec autorisation pour tous
+const PORT = 3000; // Définit le port de communication du serveur
+const server = http.createServer(); // Crée le serveur HTTP
+const wss = new WebSocket.Server({ server }); // Initialise le serveur WebSocket sur le serveur HTTP
 
-// Configuration des fichiers statiques
-app.use(express.static(path.join(__dirname, '../client'))); // Sert le dossier client (index.html)
+const CANVAS_WIDTH = 3200; // Largeur du champ de bataille Gold Pixel
+const CANVAS_HEIGHT = 1800; // Hauteur du champ de bataille
+const canvasData = new Uint32Array(CANVAS_WIDTH * CANVAS_HEIGHT); // Stocke les couleurs des pixels en mémoire vive (4 octets par pixel)
+const ownerData = new Map(); // Associe chaque coordonnée X,Y au pseudo du dernier soldat
+const protectionData = new Map(); // Stocke le timestamp de pose pour la protection de 30 secondes
 
-// Paramètres du jeu Gold Pixel
-const TAILLE = 512; // Définit la taille de la grille à 512x512
-const memoirePixels = new Uint8Array(TAILLE * TAILLE * 3).fill(255); // Crée une grille vide (blanche) en mémoire
+// Charge les données sauvegardées au démarrage pour éviter le reset après un crash
+if (fs.existsSync('canvas_save.bin')) {
+    const buffer = fs.readFileSync('canvas_save.bin'); // Lit le fichier binaire de sauvegarde
+    for (let i = 0; i < canvasData.length; i++) canvasData[i] = buffer.readUInt32LE(i * 4); // Restaure les pixels
+}
 
-// Gestion des connexions joueurs
-io.on('connection', (socket) => { // S'exécute quand un nouveau joueur se connecte
-    console.log('Un défenseur rejoint la Forteresse !'); // Log de connexion pour le suivi
-    socket.emit('init_canvas', Array.from(memoirePixels)); // Envoie la grille actuelle au nouveau joueur
+// Fonction de sauvegarde automatique toutes les 5 minutes
+setInterval(() => {
+    fs.writeFileSync('canvas_save.bin', Buffer.from(canvasData.buffer)); // Écrit le canvas sur le disque
+    console.log("💾 Grand Nettoyage préparé : Sauvegarde auto effectuée."); // Log de passionné
+}, 300000);
 
-    // Gestion de la pose de pixel
-    socket.on('claim_pixel', (donnees) => { // Ecoute l'événement de pose de pixel
-        const { x, y, color } = donnees; // Récupère les coordonnées et la couleur RVB
-        if (x >= 0 && x < TAILLE && y >= 0 && y < TAILLE) { // Vérifie que le clic est dans les limites
-            const index = (y * TAILLE + x) * 3; // Calcule l'emplacement exact dans le tableau mémoire
-            memoirePixels[index] = color[0]; // Enregistre la valeur Rouge
-            memoirePixels[index + 1] = color[1]; // Enregistre la valeur Vert
-            memoirePixels[index + 2] = color[2]; // Enregistre la valeur Bleu
-            io.emit('pixel_update', { x, y, color }); // Diffuse le nouveau pixel à tous les joueurs en direct
+wss.on('connection', (ws) => { // S'exécute quand un nouveau soldat se connecte
+    console.log("🎖 Nouveau soldat au rapport !"); // Log de connexion
+
+    // Envoie l'état actuel du canvas au nouveau joueur (Bulk transfert)
+    ws.send(JSON.stringify({ type: 'bulk', data: Array.from(canvasData) }));
+
+    ws.on('message', (message) => { // Reçoit une action du client
+        const msg = JSON.parse(message); // Décode le format JSON
+
+        if (msg.type === 'pixel') { // Si le joueur pose un pixel
+            const { x, y, color, owner } = msg; // Extrait les données de la pose
+            const index = y * CANVAS_WIDTH + x; // Calcule la position linéaire
+            const now = Date.now(); // Temps actuel
+
+            // Vérification de la protection "Bouclier" de 30 secondes
+            const lastTime = protectionData.get(index) || 0;
+            if (now - lastTime < 30000 && ownerData.get(index) !== owner) {
+                return; // Bloque la pose si le pixel est encore invulnérable
+            }
+
+            canvasData[index] = parseInt(color.replace('#', '0x'), 16); // Enregistre la couleur en hexa
+            ownerData.set(index, owner); // Met à jour le propriétaire
+            protectionData.set(index, now); // Réinitialise le délai de protection
+
+            // Diffuse la pose à tous les autres joueurs connectés
+            const broadcastMsg = JSON.stringify({ type: 'pixel', x, y, color, owner });
+            wss.clients.forEach(client => {
+                if (client.readyState === WebSocket.OPEN) client.send(broadcastMsg);
+            });
+        }
+
+        if (msg.type === 'purchase') { // Log des achats Boutique (Dômes, Chargers)
+            console.log(`💰 Achat confirmé : ${msg.item} par ${msg.uid}`);
+            // Ici, on pourrait ajouter une vérification de transaction Pi côté serveur
         }
     });
 });
 
-// Lancement du serveur
-const PORT = process.env.PORT || 10000; // Utilise le port assigné par Render (souvent 10000)
-server.listen(PORT, () => { // Démarre l'écoute du serveur
-    console.log(`Le serveur de Gold Pixel tourne sur le port ${PORT}`); // Message de succès final
+server.listen(PORT, () => { // Démarre officiellement le serveur
+    console.log(`🚀 Gold Pixel Engine opérationnel sur le port ${PORT}`);
 });
