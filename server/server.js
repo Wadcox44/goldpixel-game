@@ -1,50 +1,43 @@
-// On appelle les outils pour créer le serveur temps réel
-const express = require('express');
-const http = require('http');
-const { Server } = require('socket.io'); // Socket.io permet le multijoueur
-const path = require('path');
+const express = require('express'); // On appelle Express pour créer le portail de jeu
+const http = require('http'); // On utilise le protocole HTTP pour le transfert
+const { Server } = require('socket.io'); // On active Socket.io pour le multijoueur en direct
+const path = require('path'); // Module pour gérer les chemins de fichiers sans erreur
 
-const app = express();
-const server = http.createServer(app);
-const io = new Server(server, {
-  cors: { origin: "*" } // Autorise ton index.html à parler au serveur sans blocage
+const app = express(); // Initialisation de l'application
+const server = http.createServer(app); // Création du serveur physique (La Forteresse)
+const io = new Server(server, { 
+    cors: { origin: "*" } // Autorise ton portail JeuxVideo.Pi à se connecter au jeu
 });
 
-// Sert les fichiers du dossier client (ton index.html)
+// Indique au serveur que les fichiers visuels (index.html) sont dans le dossier "client"
 app.use(express.static(path.join(__dirname, '../client')));
 
-// CONFIGURATION DE LA GRILLE (512x512 pixels)
-const TAILLE = 512;
-// Mémoire vive : stocke les couleurs (RVB) de chaque pixel
-const memoirePixels = new Uint8Array(TAILLE * TAILLE * 3).fill(20); 
+const TAILLE = 512; // Taille de la grille (512x512 pixels)
+const memoirePixels = new Uint8Array(TAILLE * TAILLE * 3).fill(255); // Grille blanche au départ
 
-io.on('connection', (socket) => {
-  console.log('Un joueur rejoint Gold Pixel !');
+io.on('connection', (socket) => { // Dès qu'un joueur se connecte au serveur Render
+    console.log('Un joueur rejoint la Forteresse !');
 
-  // Envoi de la grille complète au nouveau joueur qui se connecte
-  socket.emit('init_canvas', Array.from(memoirePixels));
+    // On lui envoie la grille actuelle dès sa connexion
+    socket.emit('init_canvas', Array.from(memoirePixels));
 
-  // Quand un joueur pose un pixel (clic sur le canevas)
-  socket.on('claim_pixel', (donnees) => {
-    const { x, y, color } = donnees;
-
-    // Vérification de sécurité pour ne pas sortir de la grille
-    if (x >= 0 && x < TAILLE && y >= 0 && y < TAILLE) {
-      
-      // Calcul de la position exacte dans la mémoire du serveur
-      const index = (y * TAILLE + x) * 3;
-      memoirePixels[index] = color[0];     // Composante Rouge
-      memoirePixels[index + 1] = color[1]; // Composante Verte
-      memoirePixels[index + 2] = color[2]; // Composante Bleue
-
-      // DIFFUSION : On renvoie le pixel mis à jour à TOUS les joueurs connectés
-      io.emit('pixel_update', { x, y, color });
-    }
-  });
+    // Quand le serveur reçoit un clic d'un joueur pour poser un pixel
+    socket.on('claim_pixel', (donnees) => {
+        const { x, y, color } = donnees; // Récupère X, Y et la couleur
+        if (x >= 0 && x < TAILLE && y >= 0 && y < TAILLE) { // Vérifie qu'on est dans la grille
+            const index = (y * TAILLE + x) * 3;
+            memoirePixels[index] = color[0]; // Stockage Rouge
+            memoirePixels[index + 1] = color[1]; // Stockage Vert
+            memoirePixels[index + 2] = color[2]; // Stockage Bleu
+            
+            // LA SENTINELLE : On diffuse le pixel à TOUT LE MONDE immédiatement
+            io.emit('pixel_update', { x, y, color });
+        }
+    });
 });
 
-// Le serveur écoute sur le port 3000
+// Port dynamique pour Render ou 3000 par défaut
 const PORT = process.env.PORT || 3000;
 server.listen(PORT, () => {
-  console.log(`La Forteresse Gold Pixel est prête sur le port ${PORT}`);
+    console.log(`Le serveur de Gold Pixel tourne sur le port ${PORT}`);
 });
