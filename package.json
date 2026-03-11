@@ -1,14 +1,14 @@
 {
-  "name": "goldpixel-game", // Nom du projet passionné sur GitHub
-  "version": "1.0.0", // Ta première version du jeu
-  "description": "Serveur multijoueur pour Gold Pixel", // Description de ton travail
-  "main": "server/server.js", // Indique que le cerveau est dans le dossier server
+  "name": "goldpixel-game",
+  "version": "1.0.0",
+  "description": "Serveur multijoueur Gold Pixel",
+  "main": "server/server.js",
   "scripts": {
-    "start": "node server/server.js" // La commande que Render utilise pour allumer le jeu
+    "start": "node server/server.js"
   },
   "dependencies": {
-    "express": "^4.18.2", // Pour gérer le site web et les routes
-    "socket.io": "^4.7.2", // Pour la communication multijoueur en temps réel
-    "path": "^0.12.7" // Pour naviguer proprement dans tes dossiers
+    "express": "^4.18.2",
+    "socket.io": "^4.7.2",
+    "path": "^0.12.7"
   }
 }
