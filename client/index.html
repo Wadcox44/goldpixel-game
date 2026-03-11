@@ -1,0 +1,73 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Gold Pixel - Game</title>
+    <script src="/socket.io/socket.io.js"></script>
+    <style>
+        :root {
+            --bg: #050b14; /* Couleur Matte */
+            --gold: #ffaa00; /* Couleur Gold */
+            --shield: #00f3ff; /* Couleur du Bouclier */
+        }
+        body { margin: 0; background: var(--bg); color: white; font-family: sans-serif; overflow: hidden; }
+        canvas { display: block; image-rendering: pixelated; cursor: crosshair; }
+        
+        /* Interface de la Boutique / Packs */
+        .hud { position: fixed; bottom: 20px; left: 50%; transform: translateX(-50%); display: flex; gap: 10px; }
+        .btn { background: rgba(0,0,0,0.8); border: 1px solid var(--gold); color: var(--gold); padding: 10px; border-radius: 5px; font-size: 12px; }
+    </style>
+</head>
+<body>
+
+    <canvas id="grid"></canvas>
+
+    <div class="hud">
+        <div class="btn">Pack Élite: 10 Pi</div>
+        <div class="btn">Bouclier: Dôme 4H</div>
+        <div class="btn" id="pixelCount">Pixels: 0</div>
+    </div>
+
+    <script>
+        // Connexion au serveur de la Forteresse
+        const socket = io(); 
+        const canvas = document.getElementById('grid');
+        const ctx = canvas.getContext('2d');
+        const TAILLE = 512;
+
+        canvas.width = TAILLE;
+        canvas.height = TAILLE;
+
+        // Réception de la grille au démarrage
+        socket.on('init_canvas', (data) => {
+            const imageData = ctx.createImageData(TAILLE, TAILLE);
+            for (let i = 0; i < data.length; i += 3) {
+                const p = (i / 3) * 4;
+                imageData.data[p] = data[i];     // R
+                imageData.data[p+1] = data[i+1]; // V
+                imageData.data[p+2] = data[i+2]; // B
+                imageData.data[p+3] = 255;       // Alpha (opacité)
+            }
+            ctx.putImageData(imageData, 0, 0);
+        });
+
+        // Mise à jour en temps réel quand un autre joueur pose un pixel
+        socket.on('pixel_update', ({ x, y, color }) => {
+            ctx.fillStyle = `rgb(${color[0]},${color[1]},${color[2]})`;
+            ctx.fillRect(x, y, 1, 1);
+        });
+
+        // Envoi d'un pixel au serveur lors d'un clic
+        canvas.addEventListener('click', (e) => {
+            // Ici, on ajoutera plus tard la vérification du délai (30s de protection)
+            const rect = canvas.getBoundingClientRect();
+            const x = Math.floor(e.clientX - rect.left);
+            const y = Math.floor(e.clientY - rect.top);
+            const color = [255, 170, 0]; // On pose du Gold par défaut !
+            
+            socket.emit('claim_pixel', { x, y, color });
+        });
+    </script>
+</body>
+</html>
